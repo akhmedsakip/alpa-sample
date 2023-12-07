@@ -469,10 +469,11 @@ def main():
         return metrics
 
     # Create parallel version of the train and eval step
-    method = alpa.Zero2Parallel()
+    # method = alpa.Zero2Parallel()
+    # method = alpa.ShardParallel()
+    method = alpa.PipeshardParallel(stage_option='auto')
     p_train_step = alpa.parallelize(train_step,
-                                    method=method,
-                                    donate_argnums=(0,))
+                                    method=method)
     p_eval_step = alpa.parallelize(eval_step)
     dump_debug_info_train_step = dump_debug_info_eval_step = True
 
@@ -526,47 +527,47 @@ def main():
             f"Throughput: {images_per_second:.2f} images/s"
         )
 
-        # ======================== Evaluating ==============================
-        eval_metrics = []
-        eval_steps = max(len(eval_dataset) // eval_batch_size, 1)
-        eval_step_progress_bar = tqdm(total=eval_steps, desc="Evaluating...", position=2, leave=False)
-        for batch in eval_loader:
-            # Model forward
-            metrics = p_eval_step(state.params, batch)
-            eval_metrics.append(metrics)
+        # # ======================== Evaluating ==============================
+        # eval_metrics = []
+        # eval_steps = max(len(eval_dataset) // eval_batch_size, 1)
+        # eval_step_progress_bar = tqdm(total=eval_steps, desc="Evaluating...", position=2, leave=False)
+        # for batch in eval_loader:
+        #     # Model forward
+        #     metrics = p_eval_step(state.params, batch)
+        #     eval_metrics.append(metrics)
 
-            if dump_debug_info_eval_step:
-                dump_debug_info_eval_step = False
-                executable = p_eval_step.get_last_executable()
-                executable.dump_debug_info("alpa_debug_info")
+        #     if dump_debug_info_eval_step:
+        #         dump_debug_info_eval_step = False
+        #         executable = p_eval_step.get_last_executable()
+        #         executable.dump_debug_info("alpa_debug_info")
 
-            eval_step_progress_bar.update(1)
+        #     eval_step_progress_bar.update(1)
 
-        # normalize eval metrics
-        eval_metrics = alpa.util.get_metrics(eval_metrics)
-        eval_metrics = jax.tree_map(jnp.mean, eval_metrics)
+        # # normalize eval metrics
+        # eval_metrics = alpa.util.get_metrics(eval_metrics)
+        # eval_metrics = jax.tree_map(jnp.mean, eval_metrics)
 
-        # Print metrics and update progress bar
-        eval_step_progress_bar.close()
-        desc = (
-            f"Epoch... ({epoch + 1}/{num_epochs} | Eval Loss: {round(eval_metrics['loss'].item(), 4)} | "
-            f"Eval Accuracy: {round(eval_metrics['accuracy'].item(), 4)})"
-        )
-        epochs.write(desc)
-        epochs.desc = desc
+        # # Print metrics and update progress bar
+        # eval_step_progress_bar.close()
+        # desc = (
+        #     f"Epoch... ({epoch + 1}/{num_epochs} | Eval Loss: {round(eval_metrics['loss'].item(), 4)} | "
+        #     f"Eval Accuracy: {round(eval_metrics['accuracy'].item(), 4)})"
+        # )
+        # epochs.write(desc)
+        # epochs.desc = desc
 
-        # Save metrics
-        if has_tensorboard and jax.process_index() == 0:
-            cur_step = epoch * (len(train_dataset) // train_batch_size)
-            write_metric(summary_writer, train_metrics, eval_metrics, train_time, cur_step)
+        # # Save metrics
+        # if has_tensorboard and jax.process_index() == 0:
+        #     cur_step = epoch * (len(train_dataset) // train_batch_size)
+        #     write_metric(summary_writer, train_metrics, eval_metrics, train_time, cur_step)
 
-        # save checkpoint after each epoch and push checkpoint to the hub
-        if jax.process_index() == 0:
-            alpa.prefetch(state.params)
-            params = alpa.util.map_to_nparray(state.params)
-            model.save_pretrained(training_args.output_dir, params=params)
-            if training_args.push_to_hub:
-                repo.push_to_hub(commit_message=f"Saving weights and logs of step {cur_step}", blocking=False)
+        # # save checkpoint after each epoch and push checkpoint to the hub
+        # if jax.process_index() == 0:
+        #     alpa.prefetch(state.params)
+        #     params = alpa.util.map_to_nparray(state.params)
+        #     model.save_pretrained(training_args.output_dir, params=params)
+        #     if training_args.push_to_hub:
+        #         repo.push_to_hub(commit_message=f"Saving weights and logs of step {cur_step}", blocking=False)
 
 
 if __name__ == "__main__":
